@@ -1,164 +1,140 @@
 #!/bin/env node
-//  OpenShift sample Node application
-var express = require('express');
+
+var _ = require('underscore')._;
 var fs      = require('fs');
+var express = require('express');
+
+var EngineProvider = require('./engine').EngineProvider;
+var engine         = new EngineProvider();
 
 
-/**
- *  Define the sample application.
- */
-var SampleApp = function() {
+/////////////////////////////////////////////////////////////////////////////////////////////
+// lemonopoly configuration
+/////////////////////////////////////////////////////////////////////////////////////////////
 
-    //  Scope.
-    var self = this;
+var zcache = { 'index.html': '' };
+zcache['index.html'] = fs.readFileSync('./public/index.html');
 
+var twitter = require('ntwitter');
+var credentials = require('./credentials.js');
 
-    /*  ================================================================  */
-    /*  Helper functions.                                                 */
-    /*  ================================================================  */
+var t = new twitter({
+    consumer_key: credentials.consumer_key,
+    consumer_secret: credentials.consumer_secret,
+    access_token_key: credentials.access_token_key,
+    access_token_secret: credentials.access_token_secret
+});
 
-    /**
-     *  Set up server IP address and port # using env variables/defaults.
-     */
-    self.setupVariables = function() {
-        //  Set the environment variables we need.
-        self.ipaddress = process.env.OPENSHIFT_INTERNAL_IP;
-        self.port      = process.env.OPENSHIFT_INTERNAL_PORT || 8080;
+t.stream(
+    'statuses/filter',
+    { 
+      track: ['lemonopoly']
+    },
+    function(stream) {
+        stream.on('data', function(tweet) {
+            var res = {};
+            engine.save(tweet,function(error,agent) {
 
-        if (typeof self.ipaddress === "undefined") {
-            //  Log errors on OpenShift but continue w/ 127.0.0.1 - this
-            //  allows us to run/test the app locally.
-            console.warn('No OPENSHIFT_INTERNAL_IP var, using 127.0.0.1');
-            self.ipaddress = "127.0.0.1";
-        };
-    };
-
-
-    /**
-     *  Populate the cache.
-     */
-    self.populateCache = function() {
-        if (typeof self.zcache === "undefined") {
-            self.zcache = { 'index.html': '' };
-        }
-
-        //  Local cache for static content.
-        self.zcache['index.html'] = fs.readFileSync('./index.html');
-    };
-
-
-    /**
-     *  Retrieve entry (content) from cache.
-     *  @param {string} key  Key identifying content to retrieve from cache.
-     */
-    self.cache_get = function(key) { return self.zcache[key]; };
-
-
-    /**
-     *  terminator === the termination handler
-     *  Terminate server on receipt of the specified signal.
-     *  @param {string} sig  Signal to terminate on.
-     */
-    self.terminator = function(sig){
-        if (typeof sig === "string") {
-           console.log('%s: Received %s - terminating sample app ...',
-                       Date(Date.now()), sig);
-           process.exit(1);
-        }
-        console.log('%s: Node server stopped.', Date(Date.now()) );
-    };
-
-
-    /**
-     *  Setup termination handlers (for exit and a list of signals).
-     */
-    self.setupTerminationHandlers = function(){
-        //  Process on exit and signals.
-        process.on('exit', function() { self.terminator(); });
-
-        // Removed 'SIGPIPE' from the list - bugz 852598.
-        ['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT',
-         'SIGBUS', 'SIGFPE', 'SIGUSR1', 'SIGSEGV', 'SIGUSR2', 'SIGTERM'
-        ].forEach(function(element, index, array) {
-            process.on(element, function() { self.terminator(element); });
+            });
         });
-    };
+    }
+);
+
+var app = module.exports = express.createServer();
+
+app.configure(function(){
+  app.use(app.router);
+  app.use(express.static(__dirname + '/public'));
+});
+
+app.dynamicHelpers({
+  session: function(req, res){
+    return req.session;
+  },
+  user_id: function(req, res) {
+    if(req.session && req.session.user_id) {
+      return req.session.user_id;
+    }
+    return null;
+  },
+});
 
 
-    /*  ================================================================  */
-    /*  App server functions (main app logic here).                       */
-    /*  ================================================================  */
+app.get('/', function(req, res){
+    res.send(zcache['index.html'], {'Content-Type': 'text/html'});
+});
 
-    /**
-     *  Create the routing table entries + handlers for the application.
-     */
-    self.createRoutes = function() {
-        self.routes = { };
+app.post('/agent/save', function(req, res) {
+  console.log("server:: agent save ");
+  var blob = req.body;
+  // @TODO is this engine really resaving based on _id? verify plz
+  engine.save(blob,function(error,agent) {
+    if(error) { res.send("Server agent storage error #5",404); return; }
+    if(!agent) { res.send("Server agent storage error #6",404); return; }
+    res.send(agent);
+  });
+});
 
-        // Routes for /health, /asciimo and /
-        self.routes['/health'] = function(req, res) {
-            res.send('1');
-        };
+/////////////////////////////////////////////////////////////////////////////////////////////
+// openshift internal routes
+/////////////////////////////////////////////////////////////////////////////////////////////
 
-        self.routes['/asciimo'] = function(req, res) {
-            var link = "http://i.imgur.com/kmbjB.png";
-            res.send("<html><body><img src='" + link + "'></body></html>");
-        };
+app.get('/health', function(req, res){
+    res.send('1');
+});
 
-        self.routes['/'] = function(req, res) {
-            res.setHeader('Content-Type', 'text/html');
-            res.send(self.cache_get('index.html') );
-        };
-    };
-
-
-    /**
-     *  Initialize the server (express) and create the routes and register
-     *  the handlers.
-     */
-    self.initializeServer = function() {
-        self.createRoutes();
-        self.app = express.createServer();
-
-        //  Add handlers for the app (from the routes).
-        for (var r in self.routes) {
-            self.app.get(r, self.routes[r]);
-        }
-    };
+// Handler for GET /asciimo
+app.get('/asciimo', function(req, res){
+    var link="https://a248.e.akamai.net/assets.github.com/img/d84f00f173afcf3bc81b4fad855e39838b23d8ff/687474703a2f2f696d6775722e636f6d2f6b6d626a422e706e67";
+    res.send("<html><body><img src='" + link + "'></body></html>");
+});
 
 
-    /**
-     *  Initializes the sample application.
-     */
-    self.initialize = function() {
-        self.setupVariables();
-        self.populateCache();
-        self.setupTerminationHandlers();
-
-        // Create the express server and routes.
-        self.initializeServer();
-    };
-
-
-    /**
-     *  Start the server (starts up the sample application).
-     */
-    self.start = function() {
-        //  Start the app on the specific interface (and port).
-        self.app.listen(self.port, self.ipaddress, function() {
-            console.log('%s: Node server started on %s:%d ...',
-                        Date(Date.now() ), self.ipaddress, self.port);
-        });
-    };
-
-};   /*  Sample Application.  */
+app.post("/agent/query", function(req,res) {
+  var blob = req.body;
+  console.log("server:: agent query for many:");
+  console.log(blob);
+  engine.find_many_by(blob,function(error, results) {
+    if(!results || error) {
+      console.log("agent query error");
+      res.send("[]");
+      return;
+    }
+    res.send(results);
+  });
+});
 
 
+/////////////////////////////////////////////////////////////////////////////////////////////
+// openshift boot up
+/////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- *  main():  Main code.
- */
-var zapp = new SampleApp();
-zapp.initialize();
-zapp.start();
+var ipaddr  = process.env.OPENSHIFT_INTERNAL_IP;
+var port    = process.env.OPENSHIFT_INTERNAL_PORT || 3000;
+
+if (typeof ipaddr === "undefined") {
+   console.warn('No OPENSHIFT_INTERNAL_IP environment variable');
+}
+
+function terminator(sig) {
+   if (typeof sig === "string") {
+      console.log('%s: Received %s - terminating Node server ...',
+                  Date(Date.now()), sig);
+      process.exit(1);
+   }
+   console.log('%s: Node server stopped.', Date(Date.now()) );
+}
+
+process.on('exit', function() { terminator(); });
+
+['SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGILL', 'SIGTRAP', 'SIGABRT', 'SIGBUS',
+ 'SIGFPE', 'SIGUSR1', 'SIGSEGV', 'SIGUSR2', 'SIGPIPE', 'SIGTERM'
+].forEach(function(element, index, array) {
+    process.on(element, function() { terminator(element); });
+});
+
+app.listen(port, ipaddr, function() {
+   console.log('%s: Node server started on %s:%d ...', Date(Date.now() ),
+               ipaddr, port);
+});
 
