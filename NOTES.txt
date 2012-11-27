@@ -1,0 +1,21 @@
+Ladies' Node Night project.
+
+++ Notes
+
+++ Run Node
+
+++ Run Mongo
+which mongo
+mongo --version
+make sure you have /data/db folder set up on your computer
+make sure you have write permissions to that folder
+
+mongod    starts the mongo server
+mongo     look at mongo
+
+mongo runs on port 27017
+
+
+Things to do:
+Config Variables as environmental variables
+Twitter API
