@@ -1,2 +1,0 @@
-Ladies' Node Night project.
-

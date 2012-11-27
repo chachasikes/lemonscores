@@ -15,6 +15,48 @@ mongo     look at mongo
 
 mongo runs on port 27017
 
+Mongo Find Command:
+http://www.mongodb.org/display/DOCS/Advanced+Queries
+
+
+
+Database contains Collection with Object
+
+
+Inserting into the Database Collection
+http://www.mongodb.org/display/DOCS/Tutorial#Tutorial-InsertingDataintoACollection
+db.cupcakes.save({'name':'Lemon'});
+
+db.cupcakes.find();
+
+
+Removing Item by ID
+http://www.mongodb.org/display/DOCS/Removing
+
+Also:
+db.cupcakes.remove({"_id" : ObjectId("50b45d3a68a462ee4f412c2d")});
+
+use dbname; --- will automatically create the db
+show collections;  --- will show you the collections
+db.createCollection('collectionname'); --- will create a new collection
+db.collectionname.find({});
+
+
+> use chacha
+switched to db chacha
+> db.createCollection('cupcakes');
+{ "ok" : 1 }
+> show collections;
+cupcakes
+system.indexes
+> show dbs;
+chacha	0.203125GB
+
+
+
+
+
+
 
 Things to do:
 Config Variables as environmental variables
